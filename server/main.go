@@ -42,7 +42,7 @@ func (*server) ListFiles(ctx context.Context, req *pb.ListFilesRequest) (*pb.Lis
 	return res, nil
 }
 
-func (*server) Download(req *pb.DownloadRequest, stream grpc.ServerStreamingServer[pb.DownloadResponse]) error {
+func (*server) Download(req *pb.DownloadRequest, stream pb.FileService_DownloadServer) error {
 	fmt.Println("Download was invoked")
 
 	filename := req.GetFilename()
@@ -76,7 +76,7 @@ func (*server) Download(req *pb.DownloadRequest, stream grpc.ServerStreamingServ
 	return nil
 }
 
-func (*server) Upload(stream grpc.ClientStreamingServer[pb.UploadRequest, pb.UploadResponse]) error {
+func (*server) Upload(stream pb.FileService_UploadServer) error {
 	fmt.Println("Upload was invoked")
 
 	var buf bytes.Buffer
@@ -94,6 +94,34 @@ func (*server) Upload(stream grpc.ClientStreamingServer[pb.UploadRequest, pb.Upl
 		log.Printf("Received data(bytes): %v", data)
 		log.Printf("Received data(string): %v", string(data))
 		buf.Write(data)
+	}
+}
+
+func (*server) UploadAndNotifyProgress(stream pb.FileService_UploadAndNotifyProgressServer) error {
+	fmt.Println("UploadAndNotifyProgress was invoked")
+
+	size := 0
+
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		data := req.GetData()
+		log.Printf("Received data(bytes): %v", data)
+		size += len(data)
+
+		res := &pb.UploadAndNotifyProgressResponse{
+			Msg: fmt.Sprintf("received %vbytes", size),
+		}
+		err = stream.Send(res)
+		if err != nil {
+			return err
+		}
 	}
 }
 

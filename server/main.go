@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"grpc-lesson/pb"
 	"io"
@@ -11,6 +12,8 @@ import (
 	"os"
 	"time"
 
+	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
+	grpc_auth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
 	"google.golang.org/grpc"
 )
 
@@ -140,6 +143,19 @@ func myLogging() grpc.UnaryServerInterceptor {
 	}
 }
 
+func authorize(ctx context.Context) (context.Context, error) {
+	token, err := grpc_auth.AuthFromMD(ctx, "Bearer")
+	if err != nil {
+		return nil, err
+	}
+
+	if token != "test-token" {
+		return nil, errors.New("bad token")
+	}
+
+	return ctx, nil
+}
+
 func main() {
 	lis, err := net.Listen("tcp", "localhost:50051")
 	if err != nil {
@@ -147,7 +163,12 @@ func main() {
 	}
 
 	s := grpc.NewServer(
-		grpc.UnaryInterceptor(myLogging()),
+		grpc.UnaryInterceptor(
+			grpc_middleware.ChainUnaryServer(
+				myLogging(),
+				grpc_auth.UnaryServerInterceptor(authorize),
+			),
+		),
 	)
 	pb.RegisterFileServiceServer(s, &server{})
 

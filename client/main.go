@@ -10,20 +10,28 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 func main() {
-	conn, err := grpc.NewClient("localhost:50051", grpc.WithInsecure())
+	certFile := "/Users/kaito/Library/Application Support/mkcert/rootCA.pem"
+	creds, err := credentials.NewClientTLSFromFile(certFile, "")
+	if err != nil {
+		log.Fatalf("Failed to load credentials: %v", err)
+	}
+	conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(creds))
 	if err != nil {
 		log.Fatalf("Failed to dial server: %v", err)
 	}
 	defer conn.Close()
 
 	client := pb.NewFileServiceClient(conn)
-	callListFiles(client)
+	// callListFiles(client)
 
-	// callDownload(client)
+	callDownload(client)
 
 	// callUpload(client)
 
@@ -31,7 +39,7 @@ func main() {
 }
 
 func callListFiles(client pb.FileServiceClient) {
-	md := metadata.New(map[string]string{"authorization": "Bearer test-token"})
+	md := metadata.New(map[string]string{"authorization": "Bearer testtoken"})
 	ctx := metadata.NewOutgoingContext(context.Background(), md)
 	res, err := client.ListFiles(ctx, &pb.ListFilesRequest{})
 	if err != nil {
@@ -42,8 +50,10 @@ func callListFiles(client pb.FileServiceClient) {
 }
 
 func callDownload(client pb.FileServiceClient) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	req := &pb.DownloadRequest{Filename: "name.txt"}
-	stream, err := client.Download(context.Background(), req)
+	stream, err := client.Download(ctx, req)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -54,7 +64,18 @@ func callDownload(client pb.FileServiceClient) {
 			break
 		}
 		if err != nil {
-			log.Fatalln(err)
+			resErr, ok := status.FromError(err)
+			if ok {
+				if resErr.Code() == codes.NotFound {
+					log.Fatalf("Error Code: %v, Error Message: %v", resErr.Code(), resErr.Message())
+				} else if resErr.Code() == codes.DeadlineExceeded {
+					log.Fatalln("deadline exceeded")
+				} else {
+					log.Fatalln("unknown grpc error")
+				}
+			} else {
+				log.Fatalln(err)
+			}
 		}
 
 		log.Printf("Response from Download(bytes): %v", res.GetData())
